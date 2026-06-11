@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>인스타 9컷 메이커 (4:5)</title>
+<style>
+body{font-family:sans-serif;margin:0;padding:12px;background:#f5f5f5;text-align:center}
+.toolbar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:10px}
+button{padding:10px 14px}
+#grid{
+width:min(95vw,700px);
+aspect-ratio:4/5;
+margin:auto;
+display:grid;
+grid-template-columns:repeat(3,1fr);
+grid-template-rows:repeat(3,1fr);
+gap:0;
+background:#000;
+touch-action:none;
+}
+.cell{
+position:relative;
+overflow:hidden;
+background:#ddd;
+border:none;
+}
+.cell img{
+position:absolute;
+transform-origin:0 0;
+user-select:none;
+-webkit-user-drag:none;
+}
+.badge{
+position:absolute;right:4px;top:4px;
+background:rgba(0,0,0,.6);color:#fff;
+font-size:11px;padding:2px 4px;border-radius:4px;
+}
+</style>
+</head>
+<body>
+<h3>인스타 4:5 9컷 메이커</h3>
+<div class="toolbar">
+<button id="saveBtn">PNG 저장</button>
+<button id="resetBtn">전체 초기화</button>
+</div>
+
+<div id="grid"></div>
+
+<script>
+const grid=document.getElementById('grid');
+const cells=[];
+
+for(let i=0;i<9;i++){
+ const cell=document.createElement('div');
+ cell.className='cell';
+
+ const input=document.createElement('input');
+ input.type='file';
+ input.accept='image/*';
+ input.style.display='none';
+
+ const badge=document.createElement('div');
+ badge.className='badge';
+ badge.textContent=(i+1);
+
+ cell.appendChild(badge);
+ cell.appendChild(input);
+ grid.appendChild(cell);
+
+ const state={img:null,x:0,y:0,scale:1,cell,input};
+ cells.push(state);
+
+ cell.addEventListener('dblclick',()=>input.click());
+ cell.addEventListener('click',()=>{if(!state.img) input.click();});
+
+ input.addEventListener('change',e=>{
+   const f=e.target.files[0];
+   if(!f) return;
+
+   const img=new Image();
+   img.onload=()=>{
+      if(state.img) state.img.remove();
+
+      state.img=img;
+      cell.appendChild(img);
+
+      const cw=cell.clientWidth;
+      const ch=cell.clientHeight;
+
+      state.scale=Math.max(cw/img.width,ch/img.height);
+      state.x=(cw-img.width*state.scale)/2;
+      state.y=(ch-img.height*state.scale)/2;
+
+      render(state);
+   };
+   img.src=URL.createObjectURL(f);
+ });
+
+ let dragging=false,startX=0,startY=0;
+
+ function pointerDown(e){
+   if(!state.img) return;
+   dragging=true;
+   const p=getPoint(e);
+   startX=p.x-state.x;
+   startY=p.y-state.y;
+ }
+ function pointerMove(e){
+   if(!dragging || !state.img) return;
+   const p=getPoint(e);
+   state.x=p.x-startX;
+   state.y=p.y-startY;
+   render(state);
+ }
+ function pointerUp(){dragging=false;}
+
+ cell.addEventListener('mousedown',pointerDown);
+ window.addEventListener('mousemove',pointerMove);
+ window.addEventListener('mouseup',pointerUp);
+
+ cell.addEventListener('touchstart',pointerDown,{passive:false});
+ cell.addEventListener('touchmove',e=>{
+   e.preventDefault();
+
+   if(e.touches.length===2 && state.img){
+      const d=dist(e.touches[0],e.touches[1]);
+      if(!state.lastDist){state.lastDist=d;return;}
+      state.scale*=d/state.lastDist;
+      state.lastDist=d;
+      render(state);
+      return;
+   }
+
+   pointerMove(e);
+ },{passive:false});
+
+ cell.addEventListener('touchend',()=>{
+   dragging=false;
+   state.lastDist=null;
+ });
+
+ cell.addEventListener('wheel',e=>{
+   if(!state.img) return;
+   e.preventDefault();
+   state.scale*=e.deltaY<0?1.05:0.95;
+   render(state);
+ });
+
+ cell.addEventListener('contextmenu',e=>{
+   e.preventDefault();
+   input.click();
+ });
+
+}
+
+function getPoint(e){
+ if(e.touches && e.touches.length){
+   return {x:e.touches[0].clientX,y:e.touches[0].clientY};
+ }
+ return {x:e.clientX,y:e.clientY};
+}
+
+function dist(a,b){
+ return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+}
+
+function render(s){
+ if(!s.img) return;
+ s.img.style.left=s.x+'px';
+ s.img.style.top=s.y+'px';
+ s.img.style.width=(s.img.naturalWidth*s.scale)+'px';
+ s.img.style.height=(s.img.naturalHeight*s.scale)+'px';
+}
+
+document.getElementById('resetBtn').onclick=()=>location.reload();
+
+document.getElementById('saveBtn').onclick=()=>{
+ const canvas=document.createElement('canvas');
+ canvas.width=1080;
+ canvas.height=1350;
+ const ctx=canvas.getContext('2d');
+
+ const cw=1080/3;
+ const ch=1350/3;
+
+ cells.forEach((s,i)=>{
+   if(!s.img) return;
+
+   const col=i%3;
+   const row=Math.floor(i/3);
+
+   const cellEl=s.cell;
+
+   const scaleX=cw/cellEl.clientWidth;
+   const scaleY=ch/cellEl.clientHeight;
+
+   ctx.save();
+   ctx.beginPath();
+   ctx.rect(col*cw,row*ch,cw,ch);
+   ctx.clip();
+
+   ctx.drawImage(
+      s.img,
+      col*cw+s.x*scaleX,
+      row*ch+s.y*scaleY,
+      s.img.naturalWidth*s.scale*scaleX,
+      s.img.naturalHeight*s.scale*scaleY
+   );
+   ctx.restore();
+ });
+
+ const a=document.createElement('a');
+ a.download='instagram_9cut_1080x1350.png';
+ a.href=canvas.toDataURL('image/png');
+ a.click();
+};
+</script>
+<p>빈 칸 터치=사진 선택 / 더블탭(PC 더블클릭)=사진 교체 / 드래그 이동 / 핀치줌</p>
+</body>
+</html>
